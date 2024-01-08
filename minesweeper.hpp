@@ -40,20 +40,20 @@ namespace minesweeper {
             return this->adjacentFlags;
           }
 
-          explicit operator wchar_t() const {
+          explicit operator std::string() const {
             if (this->mined) {
-              return L'⦻';
+              return "⦻";
             }
 
             if (this->flagged) {
-              return L'⚑';
+              return "⚑";
             }
 
             if (this->adjacentMines == 0) {
-              return L' ';
+              //return " ";
             }
 
-            return L'0' + this->adjacentMines;
+            return std::to_string(this->adjacentMines);
           }
 
         private:
@@ -145,14 +145,14 @@ namespace minesweeper {
             }
 
             // Increase the count of adjacent mines in adjacent tiles
-            for (size_t y = row - 1; y <= row + 1; ++y) {
-              for (size_t x = col - 1; x <= col + 1; ++x) {
-                if (x == col && y == row) {
+            for (int rowOffset = -1; rowOffset <= 1; ++rowOffset) {
+              for (int colOffset = -1; colOffset <= 1; ++colOffset) {
+                if (rowOffset == 0 && colOffset == 0) {
                   continue;
                 }
 
                 try {
-                  ++this->tileAt(row, col).adjacentMines;
+                  ++(this->tileAt(row + rowOffset, col + colOffset).adjacentMines);
                 } catch (const std::out_of_range&) {
                   continue;
                 }
@@ -206,13 +206,13 @@ namespace minesweeper {
                 this->firstReveal = false;
 
                 if (propogate && (t.adjacentMines == 0 || position == initialPosition)) {
-                  for (size_t y = row - 1; y <= row + 1; ++y) {
-                    for (size_t x = col - 1; x <= col + 1; ++x) {
-                      if (x == col && y == row) {
+                  for (int rowOffset = -1; rowOffset <= 1; ++rowOffset) {
+                    for (int colOffset = -1; colOffset <= 1; ++colOffset) {
+                      if (rowOffset == 0 && colOffset == 0) {
                         continue;
                       }
 
-                      queuedTiles.push_back(coordsToInt(this->width(), this->height(), {row, col}));
+                      queuedTiles.push_back(coordsToInt(this->width(), this->height(), {row + rowOffset, col + colOffset}));
                     }
                   }
                 }
@@ -235,13 +235,13 @@ namespace minesweeper {
 
         tile& t = this->tileAt(row, col);
         if (t.flag()) {
-          for (size_t y = row - 1; y <= row + 1; ++y) {
-            for (size_t x = col - 1; x <= col + 1; ++x) {
-              if (x == col && y == row) {
+          for (int rowOffset = -1; rowOffset <= 1; ++rowOffset) {
+            for (int colOffset = -1; colOffset <= 1; ++colOffset) {
+              if (rowOffset == 0 && colOffset == 0) {
                 continue;
               }
 
-              this->tileAt(y, x).adjacentFlags += (t.flagged ? 1 : -1);
+              this->tileAt(row + rowOffset, col + colOffset).adjacentFlags += (t.flagged ? 1 : -1);
             }
           }
 
