@@ -180,7 +180,9 @@ namespace minesweeper {
               auto [row, col] = intToCoords(this->width(), this->height(), position);
               tile& t = this->tileAt(row, col);
 
-              if (t.reveal()) {
+              bool wasHidden = t.reveal();
+
+              if (wasHidden) {
                 // Regenerate the game if the first reveal is on a mine
                 if (t.mined && this->firstReveal) {
                   this->initialise(this->width(), this->height(), this->mines.size());
@@ -198,7 +200,7 @@ namespace minesweeper {
                    // Propogate if the tile is blank
                    (t.adjacentMines == 0) ||
                    // Propogate if the number of flags match the number of mines and it is the initial tile and revealed
-                   (position == initialPosition && t.adjacentFlags == t.adjacentMines && t.revealed)
+                   (position == initialPosition && t.adjacentFlags == t.adjacentMines && !wasHidden)
                   )
                  ){
                 for (int rowOffset = -1; rowOffset <= 1; ++rowOffset) {
