@@ -178,22 +178,6 @@ namespace minesweeper {
               auto [row, col] = intToCoords(this->width(), this->height(), position);
               tile& t = this->tileAt(row, col);
 
-              if (t.flagged) {
-                continue;
-              }
-
-              if (position == initialPosition) {
-                if (t.adjacentFlags != t.adjacentMines) {
-                  if (t.revealed) {
-                    continue;
-                  }
-                } else {
-                  propogate = true;
-                }
-
-                propogate |= (t.adjacentMines == 0);
-              }
-
               if (t.reveal()) {
                 if (t.mined) {
                   if (this->firstReveal) {
@@ -202,17 +186,35 @@ namespace minesweeper {
                   }
                   revealedMines.insert(position);
                 }
+ 
+                if (position == initialPosition) {
+                  if (t.adjacentFlags != t.adjacentMines) {
+                    if (t.revealed) {
+                      continue;
+                    }
+                  } else {
+                    propogate = true;
+                  }
+
+                  propogate |= (t.adjacentMines == 0);
+                  propogate &= !t.mined;
+                }
 
                 this->firstReveal = false;
 
-                if (propogate && (t.adjacentMines == 0 || position == initialPosition)) {
+                if (propogate && !t.mined && !t.flagged && (t.adjacentMines == 0 || position == initialPosition)) {
                   for (int rowOffset = -1; rowOffset <= 1; ++rowOffset) {
                     for (int colOffset = -1; colOffset <= 1; ++colOffset) {
                       if (rowOffset == 0 && colOffset == 0) {
                         continue;
                       }
 
-                      queuedTiles.push_back(coordsToInt(this->width(), this->height(), {row + rowOffset, col + colOffset}));
+                      try {
+                        this->tileAt(row + rowOffset, col + colOffset);
+                        queuedTiles.push_back(coordsToInt(this->width(), this->height(), {row + rowOffset, col + colOffset}));
+                      } catch (const std::out_of_range&) {
+                        continue;
+                      }
                     }
                   }
                 }
@@ -241,7 +243,11 @@ namespace minesweeper {
                 continue;
               }
 
-              this->tileAt(row + rowOffset, col + colOffset).adjacentFlags += (t.flagged ? 1 : -1);
+              try {
+                this->tileAt(row + rowOffset, col + colOffset).adjacentFlags += (t.flagged ? 1 : -1);
+              } catch (const std::out_of_range&) {
+                continue;
+              }
             }
           }
 
