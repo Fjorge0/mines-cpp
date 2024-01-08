@@ -40,7 +40,7 @@ namespace minesweeper {
             return this->adjacentFlags;
           }
 
-          explicit operator wchar_t() {
+          explicit operator wchar_t() const {
             if (this->mined) {
               return L'⦻';
             }
