@@ -69,9 +69,12 @@ namespace minesweeper {
           }
 
           bool reveal() {
-            this->revealed = true;
-
-            return this->mined;
+            if (!this->flagged && !this->revealed) {
+              this->revealed = true;
+              return true;
+            } else {
+              return false;
+            }
           }
 
           friend minesweeper::game;
@@ -88,7 +91,15 @@ namespace minesweeper {
         return this->grid.at(row).at(col);
       }
 
+      const tile& tileAt(size_t row, size_t col) const {
+        return this->grid.at(row).at(col);
+      }
+
       tile& tileAt(const std::pair<size_t, size_t>& coords) {
+        return this->tileAt(coords.first, coords.second);
+      }
+
+      const tile& tileAt(const std::pair<size_t, size_t>& coords) const {
         return this->tileAt(coords.first, coords.second);
       }
 
@@ -104,9 +115,13 @@ namespace minesweeper {
         game(width, height, (unsigned long int)((width * height) * minePercent)) {}
 
       void initialise(unsigned int width, unsigned int height, unsigned long int mineCount) {
+        if (width == 0 || height == 0) {
+          throw std::out_of_range("Invalid width or height of game board.");
+        }
+
         // Reset game state
         this->mines.clear();
-        this->moves = 0;
+        this->firstReveal = true;
         {
           std::vector<tile> row(width, tile());
           this->grid = std::vector<std::vector<tile>>(height, row);
@@ -160,7 +175,7 @@ namespace minesweeper {
 
           if (revealedTiles.insert(position).second) {
             try {
-              auto [row, col] = intToCoords(this->grid.at(0).size(), this->grid.size(), position);
+              auto [row, col] = intToCoords(this->width(), this->height(), position);
               tile& t = this->tileAt(row, col);
 
               if (t.flagged) {
@@ -179,10 +194,16 @@ namespace minesweeper {
                 propogate |= (t.adjacentMines == 0);
               }
 
-              if (!t.revealed) {
-                if (t.reveal()) {
+              if (t.reveal()) {
+                if (t.mined) {
+                  if (this->firstReveal) {
+                    this->initialise(this->width(), this->height(), this->mines.size());
+                    return this->reveal(initialPosition);
+                  }
                   revealedMines.insert(position);
                 }
+
+                this->firstReveal = false;
 
                 if (propogate && (t.adjacentMines == 0 || position == initialPosition)) {
                   for (size_t y = row - 1; y <= row + 1; ++y) {
@@ -191,7 +212,7 @@ namespace minesweeper {
                         continue;
                       }
 
-                      queuedTiles.push_back(coordsToInt(this->grid.at(0).size(), this->grid.size(), {row, col}));
+                      queuedTiles.push_back(coordsToInt(this->width(), this->height(), {row, col}));
                     }
                   }
                 }
@@ -210,7 +231,7 @@ namespace minesweeper {
       }
 
       void flag(unsigned long int position) {
-        auto [row, col] = intToCoords(this->grid.at(0).size(), this->grid.size(), position);
+        auto [row, col] = intToCoords(this->width(), this->height(), position);
 
         tile& t = this->tileAt(row, col);
         if (t.flag()) {
@@ -223,38 +244,64 @@ namespace minesweeper {
               this->tileAt(y, x).adjacentFlags += (t.flagged ? 1 : -1);
             }
           }
+
+          if (t.flagged) {
+            this->flags.insert(position);
+          } else {
+            this->flags.erase(position);
+          }
         }
       }
 
       auto reveal(unsigned int row, unsigned int col) {
-        return this->reveal(coordsToInt(this->grid.at(0).size(), this->grid.size(), {row, col}));
+        return this->reveal(coordsToInt(this->width(), this->height(), {row, col}));
       }
 
       auto flag(unsigned int row, unsigned int col) {
-        return this->flag(coordsToInt(this->grid.at(0).size(), this->grid.size(), {row, col}));
+        return this->flag(coordsToInt(this->width(), this->height(), {row, col}));
       }
 
     private:
       std::default_random_engine rng;
       std::vector<std::vector<tile>> grid;
       std::unordered_set<unsigned long int> mines, flags;
-      unsigned long int moves = 0;
+      bool firstReveal = true;
 
     public:
+      inline size_t width() const {
+        return this->grid.at(0).size();
+      }
+
+      inline size_t height() const {
+        return this->grid.size();
+      }
+
       const std::vector<std::vector<tile>>& getGrid() const {
-        return grid;
+        return this->grid;
       }
 
-      unsigned long int getMoves() const {
-        return moves;
+      size_t mineCount() const {
+        return this->mines.size();
       }
 
-      size_t mineCount() {
-        return mines.size();
+      size_t flagCount() const {
+        return this->flags.size();
       }
 
-      size_t flagCount() {
-        return flags.size();
+      bool unflaggedMine() const {
+        return this->flags != this->mines;
+      }
+
+      bool revealedMine() const {
+        for (const auto& position : mines) {
+          auto [row, col] = intToCoords(this->width(), this->height(), position);
+
+          if (this->tileAt(row, col).revealed) {
+            return true;
+          }
+        }
+
+        return false;
       }
   };
 };
