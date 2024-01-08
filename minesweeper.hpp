@@ -50,7 +50,7 @@ namespace minesweeper {
             }
 
             if (this->adjacentMines == 0) {
-              //return " ";
+              return "⬚";
             }
 
             return std::to_string(this->adjacentMines);
