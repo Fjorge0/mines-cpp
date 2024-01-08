@@ -40,20 +40,21 @@ namespace minesweeper {
             return this->adjacentFlags;
           }
 
-          explicit operator std::string() const {
-            if (this->mined) {
-              return "⦻";
+          // Return a character representing the tile
+          explicit operator char() const {
+            if (this->flagged) {
+              return 'F';
             }
 
-            if (this->flagged) {
-              return "⚑";
+            if (this->mined) {
+              return '*';
             }
 
             if (this->adjacentMines == 0) {
-              return "⬚";
+              return ' ';
             }
 
-            return std::to_string(this->adjacentMines);
+            return '0' + this->adjacentMines;
           }
 
         private:
@@ -105,18 +106,19 @@ namespace minesweeper {
 
     public:
       game(unsigned int width, unsigned int height, unsigned long int mineCount) {
+        // Initialise the random number generator
         this->rng.seed(std::chrono::high_resolution_clock::now().time_since_epoch().count());
         this->rng.discard(5);
 
         this->initialise(width, height, mineCount);
       }
 
-      game(unsigned int width, unsigned int height, double minePercent) :
-        game(width, height, (unsigned long int)((width * height) * minePercent)) {}
-
       void initialise(unsigned int width, unsigned int height, unsigned long int mineCount) {
         if (width == 0 || height == 0) {
-          throw std::out_of_range("Invalid width or height of game board.");
+          throw std::invalid_argument("Invalid width or height of game board.");
+        }
+        if (mineCount > width * height) {
+          throw std::out_of_range("Requested mine count exceeds size of board.");
         }
 
         // Reset game state
@@ -130,6 +132,7 @@ namespace minesweeper {
         // Create distribution to generate mines
         std::uniform_int_distribution<unsigned long int> distribution(0, (unsigned long int)(width * height) - 1);
 
+        // Generate mines
         while (this->mines.size() < mineCount) {
           unsigned long int minePos = distribution(this->rng);
 
@@ -162,59 +165,56 @@ namespace minesweeper {
         }
       }
 
-      std::unordered_set<unsigned long int> reveal(unsigned long int initialPosition) {
-        std::unordered_set<unsigned long int> revealedMines, revealedTiles;
+      void reveal(unsigned long int initialPosition) {
+        std::unordered_set<unsigned long int> passedTiles;
 
-        bool propogate = false;
-
+        // Continue to reveal tiles until there are no more to reveal
         std::deque<unsigned long int> queuedTiles;
         queuedTiles.push_front(initialPosition);
         while (queuedTiles.size() > 0) {
           unsigned long int position = queuedTiles.front();
           queuedTiles.pop_front();
 
-          if (revealedTiles.insert(position).second) {
+          if (passedTiles.insert(position).second) {
             try {
               auto [row, col] = intToCoords(this->width(), this->height(), position);
               tile& t = this->tileAt(row, col);
 
               if (t.reveal()) {
-                if (t.mined) {
-                  if (this->firstReveal) {
-                    this->initialise(this->width(), this->height(), this->mines.size());
-                    return this->reveal(initialPosition);
-                  }
-                  revealedMines.insert(position);
-                }
- 
-                if (position == initialPosition) {
-                  if (t.adjacentFlags != t.adjacentMines) {
-                    if (t.revealed) {
-                      continue;
-                    }
-                  } else {
-                    propogate = true;
-                  }
-
-                  propogate |= (t.adjacentMines == 0);
-                  propogate &= !t.mined;
+                // Regenerate the game if the first reveal is on a mine
+                if (t.mined && this->firstReveal) {
+                  this->initialise(this->width(), this->height(), this->mines.size());
+                  return this->reveal(initialPosition);
                 }
 
                 this->firstReveal = false;
+              }
 
-                if (propogate && !t.mined && !t.flagged && (t.adjacentMines == 0 || position == initialPosition)) {
-                  for (int rowOffset = -1; rowOffset <= 1; ++rowOffset) {
-                    for (int colOffset = -1; colOffset <= 1; ++colOffset) {
-                      if (rowOffset == 0 && colOffset == 0) {
-                        continue;
-                      }
+              // Propogate the revealing to the surrounding tiles
+              if (
+                  // Do not propogate if the tile is a mine or a flag
+                  (!t.mined && !t.flagged) &&
+                  (
+                   // Propogate if the tile is blank
+                   (t.adjacentMines == 0) ||
+                   // Propogate if the number of flags match the number of mines and it is the initial tile and revealed
+                   (position == initialPosition && t.adjacentFlags == t.adjacentMines && t.revealed)
+                  )
+                 ){
+                for (int rowOffset = -1; rowOffset <= 1; ++rowOffset) {
+                  for (int colOffset = -1; colOffset <= 1; ++colOffset) {
+                    if (rowOffset == 0 && colOffset == 0) {
+                      continue;
+                    }
 
-                      try {
-                        this->tileAt(row + rowOffset, col + colOffset);
-                        queuedTiles.push_back(coordsToInt(this->width(), this->height(), {row + rowOffset, col + colOffset}));
-                      } catch (const std::out_of_range&) {
-                        continue;
-                      }
+                    try {
+                      // Check if tile is valid
+                      this->tileAt(row + rowOffset, col + colOffset);
+
+                      // Queue adjacent tile to be revealed
+                      queuedTiles.push_back(coordsToInt(this->width(), this->height(), {row + rowOffset, col + colOffset}));
+                    } catch (const std::out_of_range&) {
+                      continue;
                     }
                   }
                 }
@@ -228,8 +228,6 @@ namespace minesweeper {
             }
           }
         }
-
-        return revealedMines;
       }
 
       void flag(unsigned long int position) {
@@ -237,6 +235,7 @@ namespace minesweeper {
 
         tile& t = this->tileAt(row, col);
         if (t.flag()) {
+          // Adjust the adjacent flag count on the grid
           for (int rowOffset = -1; rowOffset <= 1; ++rowOffset) {
             for (int colOffset = -1; colOffset <= 1; ++colOffset) {
               if (rowOffset == 0 && colOffset == 0) {
@@ -251,6 +250,7 @@ namespace minesweeper {
             }
           }
 
+          // Update the flags set
           if (t.flagged) {
             this->flags.insert(position);
           } else {
@@ -294,11 +294,19 @@ namespace minesweeper {
         return this->flags.size();
       }
 
-      bool unflaggedMine() const {
-        return this->flags != this->mines;
+      bool isAllExceptMinesRevealed() const {
+        for (const auto& row : this->grid) {
+          for (const tile& t : row) {
+            if (!t.revealed && !t.mined) {
+              return false;
+            }
+          }
+        }
+
+        return !this->isMineRevealed();
       }
 
-      bool revealedMine() const {
+      bool isMineRevealed() const {
         for (const auto& position : mines) {
           auto [row, col] = intToCoords(this->width(), this->height(), position);
 
