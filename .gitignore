@@ -1,0 +1,6 @@
+*.bin
+*.exe
+*.pro.user
+.qmake*
+.qtc*
+Makefile

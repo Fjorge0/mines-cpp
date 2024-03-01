@@ -6,12 +6,13 @@
 #include <vector>
 #include <unordered_set>
 #include <random>
+#include <stdexcept>
 
-static inline std::pair<size_t, size_t> intToCoords(size_t width, size_t height, unsigned long int num) {
-  return std::pair<size_t, size_t>{num / width, num % height};
+static inline std::pair<size_t, size_t> intToCoords(size_t width, unsigned long int num) {
+  return std::pair<size_t, size_t>{num / width, num % width};
 }
 
-static inline unsigned long int coordsToInt(size_t width, size_t height, const std::pair<size_t, size_t>& coords) {
+static inline unsigned long int coordsToInt(size_t width, const std::pair<size_t, size_t>& coords) {
   return width * coords.first + coords.second;
 }
 
@@ -123,6 +124,7 @@ namespace minesweeper {
 
         // Reset game state
         this->mines.clear();
+        this->flags.clear();
         this->firstReveal = true;
         {
           std::vector<tile> row(width, tile());
@@ -137,7 +139,7 @@ namespace minesweeper {
           unsigned long int minePos = distribution(this->rng);
 
           if (this->mines.insert(minePos).second) {
-            auto [row, col] = intToCoords(width, height, minePos);
+            auto [row, col] = intToCoords(width, minePos);
 
             // Set the position as mined
             try {
@@ -177,7 +179,7 @@ namespace minesweeper {
 
           if (passedTiles.insert(position).second) {
             try {
-              auto [row, col] = intToCoords(this->width(), this->height(), position);
+              auto [row, col] = intToCoords(this->width(), position);
               tile& t = this->tileAt(row, col);
 
               bool wasHidden = t.reveal();
@@ -214,7 +216,7 @@ namespace minesweeper {
                       this->tileAt(row + rowOffset, col + colOffset);
 
                       // Queue adjacent tile to be revealed
-                      queuedTiles.push_back(coordsToInt(this->width(), this->height(), {row + rowOffset, col + colOffset}));
+                      queuedTiles.push_back(coordsToInt(this->width(), {row + rowOffset, col + colOffset}));
                     } catch (const std::out_of_range&) {
                       continue;
                     }
@@ -233,7 +235,7 @@ namespace minesweeper {
       }
 
       void flag(unsigned long int position) {
-        auto [row, col] = intToCoords(this->width(), this->height(), position);
+        auto [row, col] = intToCoords(this->width(), position);
 
         tile& t = this->tileAt(row, col);
         if (t.flag()) {
@@ -262,11 +264,11 @@ namespace minesweeper {
       }
 
       auto reveal(unsigned int row, unsigned int col) {
-        return this->reveal(coordsToInt(this->width(), this->height(), {row, col}));
+        return this->reveal(coordsToInt(this->width(), {row, col}));
       }
 
       auto flag(unsigned int row, unsigned int col) {
-        return this->flag(coordsToInt(this->width(), this->height(), {row, col}));
+        return this->flag(coordsToInt(this->width(), {row, col}));
       }
 
     private:
@@ -310,7 +312,7 @@ namespace minesweeper {
 
       bool isMineRevealed() const {
         for (const auto& position : mines) {
-          auto [row, col] = intToCoords(this->width(), this->height(), position);
+          auto [row, col] = intToCoords(this->width(), position);
 
           if (this->tileAt(row, col).revealed) {
             return true;
