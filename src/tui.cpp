@@ -1,10 +1,10 @@
-#include "minesweeper.hpp"
+#include "../include/mines.hpp"
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <iostream>
 
-static constexpr std::array<std::string, 9> NUMCOLOURS = {
+static const std::array<std::string, 9> NUMCOLOURS = {
   "",
   "\033[94m",
   "\033[32m",
@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
         for (size_t col = 0; col < game.width(); ++col) {
           const auto& t = grid.at(row).at(col);
 
-          if (row == selectedRow && col == selectedCol) {
+          if (row == static_cast<size_t>(selectedRow) && col == static_cast<size_t>(selectedCol)) {
             std::cout << "\033[100m";
           }
 

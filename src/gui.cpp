@@ -1,10 +1,11 @@
-#include "minesweeper.hpp"
+#include "../include/mines.hpp"
 #include <chrono>
 #include <format>
-#include <unordered_map>
 #include <QtCore/QTimer>
 #include <QtGui/QIcon>
 #include <QtGui/QMouseEvent>
+#include <QShortcut>
+#include <QStyle>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QFrame>
 #include <QtWidgets/QGraphicsBlurEffect>
@@ -16,6 +17,7 @@
 #include <QtWidgets/QMenuBar>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QWidget>
+#include <QtWidgets/QStackedLayout>
 
 class MinesweeperWindow : public QMainWindow {
 public:
@@ -39,7 +41,7 @@ public:
         }
 
         virtual void mousePressEvent(QMouseEvent* event) override {
-            if (parentWindow->gameState == NONE) {
+            if (parentWindow->gameState == GameState::NONE) {
                 if (parentWindow->game.getGrid().at(row).at(col).isRevealed()) {
                     for (int rowOffset = -1; rowOffset <= 1; ++rowOffset) {
                         for (int colOffset = -1; colOffset <= 1; ++colOffset) {
@@ -48,9 +50,9 @@ public:
                             }
 
                             try {
-                                Tile* t = parentWindow->grid.at(row + rowOffset).at(col + colOffset);
-                                if (!t->isFlat()) {
-                                    t->setDown(true);
+                                Tile& t = *parentWindow->grid.at(row + rowOffset).at(col + colOffset);
+                                if (!t.isFlat()) {
+                                    t.setDown(true);
                                 }
                             } catch (const std::out_of_range&) {
                                 continue;
@@ -162,6 +164,7 @@ public:
         }
 
         void stop() {
+            paused = false;
             setDuration();
             QTimer::stop();
         }
@@ -180,7 +183,7 @@ public:
             }
 
             const std::chrono::seconds castDuration = std::chrono::duration_cast<std::chrono::seconds>(duration);
-            parentWindow->timeLabel->setText(QString::fromStdString(std::format("{0:%H}:{0:%M}:{0:%S}", castDuration)));
+            parentWindow->timeLabel.setText(QString::fromStdString(std::format("{0:%H}:{0:%M}:{0:%S}", castDuration)));
         }
 
     private:
@@ -190,7 +193,7 @@ public:
         bool paused = false;
     };
 
-    enum GameState {
+    enum struct GameState : uint8_t {
         NONE = 0,
         WON = 1,
         LOST = 2
@@ -201,47 +204,53 @@ public:
     //16x16: 40
     //30x16: 99
     MinesweeperWindow() : QMainWindow(), game(30, 16, 99) {
-        gridLayout->setSpacing(1);
-        flagLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-        restartButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-        timeLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        gridLayout.setSpacing(1);
+        flagLabel.setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Minimum);
+        restartButton.setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Minimum);
+        timeLabel.setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Minimum);
+        gridFrame.setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
+        pausedIcon.setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
 
         // Create a central widget
-        QWidget *centralWidget = new QWidget();
-        this->setCentralWidget(centralWidget);
+        this->setCentralWidget(&centralWidget);
 
         // Create the top bar
-        QHBoxLayout *topBoxLayout = new QHBoxLayout();
+        topBoxLayout.addWidget(&flagLabel, 1, Qt::AlignLeft);
+        topBoxLayout.addWidget(&restartButton, 0, Qt::AlignCenter);
+        topBoxLayout.addWidget(&settingsButton, 0, Qt::AlignCenter);
+        topBoxLayout.addWidget(&timeLabel, 1, Qt::AlignRight);
 
-        topBoxLayout->addWidget(flagLabel, 1, Qt::AlignLeft);
-        topBoxLayout->addWidget(restartButton, 0, Qt::AlignCenter);
-        topBoxLayout->addWidget(settingsButton, 0, Qt::AlignCenter);
-        topBoxLayout->addWidget(timeLabel, 1, Qt::AlignRight);
+        mainLayout.addItem(&topBoxLayout);
 
-        mainLayout->addItem(topBoxLayout);
+        // Create indicator that game is paused
+        pausedIcon.setIcon(QIcon::fromTheme(("media-playback-pause")));
+        pausedIcon.setProperty("class", "pauseIcon");
+
+        // Create a stacked layout for the board
+        boardFrame.setLayout(&stackLayout);
+
+        stackLayout.addWidget(&pausedIcon);
 
         // Create the grid for the board
+        gridLayout.setContentsMargins(0, 0, 0, 0);
+        gridFrame.setLayout(&gridLayout);
+
+        stackLayout.addWidget(&gridFrame);
+        stackLayout.setCurrentWidget(&gridFrame);
+
         resizeGrid();
 
-        gridLayout->setContentsMargins(0, 0, 0, 0);
-        gridFrame->setLayout(gridLayout);
+        // Add board to window
+        mainLayout.addWidget(&boardFrame);
 
-        mainLayout->addWidget(gridFrame);
+        // Shortcut to restart game
+        QObject::connect(&shortcut, &QShortcut::activated, this, static_cast<void (MinesweeperWindow::*)(void)>(&MinesweeperWindow::restartGame));
 
         // Show the window
-        centralWidget->setLayout(mainLayout);
+        centralWidget.setLayout(&mainLayout);
     }
 
     virtual ~MinesweeperWindow() {}
-
-    // TODO: Make space global
-    virtual void keyPressEvent(QKeyEvent* event) override {
-        if (event->key() == Qt::Key_Space) {
-            this->restartGame();
-        }
-
-        QMainWindow::keyPressEvent(event);
-    }
 
 protected:
     void restartGame(unsigned int width, unsigned int height, unsigned long int mineCount) {
@@ -250,166 +259,199 @@ protected:
         this->repaint();
     }
 
-    void restartGame() {
+    void restartGame(void) {
         this->restartGame(game.width(), game.height(), game.mineCount());
     }
 
     void playPauseGame() {
         timer.playPause();
-
-        if (!timer.isPaused()) {
-            gridFrame->setGraphicsEffect(nullptr);
-        } else {
-            QGraphicsBlurEffect* blur = new QGraphicsBlurEffect();
-            blur->setBlurHints(QGraphicsBlurEffect::PerformanceHint);
-            blur->setBlurRadius(5);
-
-            gridFrame->setGraphicsEffect(blur);
-        }
-
         this->updateGrid();
     }
 
     void resizeGrid() {
-        static QSizePolicy tilePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-        tilePolicy.setHeightForWidth(true);
+        static QSizePolicy tilePolicy(QSizePolicy::Preferred, QSizePolicy::Ignored);
+        tilePolicy.setWidthForHeight(true);
 
+        // Delete tiles from grid
         QLayoutItem* item = nullptr;
-        while ((item = gridLayout->takeAt(0)) != nullptr) {
-            gridLayout->removeWidget(item->widget());
-            gridLayout->removeItem(item);
+        while ((item = gridLayout.takeAt(0)) != nullptr) {
+            gridLayout.removeWidget(item->widget());
+            gridLayout.removeItem(item);
             delete item->widget();
             delete item;
         }
-        grid.clear();
 
+        // Add new tiles to grid
+        grid.clear();
+        grid.resize(game.height());
         for (size_t row = 0; row < game.height(); ++row) {
+            grid.at(row).reserve(game.width());
+
             for (size_t col = 0; col < game.width(); ++col) {
                 Tile* tile = new Tile("", this, row, col);
                 tile->setSizePolicy(tilePolicy);
+                tile->setProperty("class", "tile");
+                tile->ensurePolished();
 
-                gridLayout->addWidget(tile, row, col);
+                gridLayout.addWidget(tile, row, col);
                 tile->show();
 
-                grid[row][col] = tile;
+                grid[row].push_back(tile);
             }
         }
 
-        this->updateGrid();
-
         this->timer.stop();
-        this->timeLabel->setText("00:00");
+        this->timeLabel.setText("00:00:00");
+
+        this->updateGrid();
     }
 
     void updateGrid() {
+        // Set restart button face
         if (this->game.isAllExceptMinesRevealed()) {
-            restartButton->setIcon(QIcon::fromTheme("face-cool"));
-            gameState = WON;
+            restartButton.setIcon(QIcon::fromTheme("face-cool"));
+            gameState = GameState::WON;
         } else if (this->game.isMineRevealed()) {
-            restartButton->setIcon(QIcon::fromTheme("face-sad"));
-            gameState = LOST;
+            restartButton.setIcon(QIcon::fromTheme("face-sad"));
+            gameState = GameState::LOST;
         } else {
-            restartButton->setIcon(QIcon::fromTheme("face-smile"));
-            gameState = NONE;
+            restartButton.setIcon(QIcon::fromTheme("face-smile"));
+            gameState = GameState::NONE;
         }
 
         const auto& board = game.getGrid();
+
+        // Apply blur if game is paused
+        if (timer.isPaused()) {
+            QGraphicsBlurEffect* blur = new QGraphicsBlurEffect();
+            blur->setBlurHints(QGraphicsBlurEffect::PerformanceHint);
+            blur->setBlurRadius(20);
+
+            gridFrame.setGraphicsEffect(blur);
+
+            stackLayout.setCurrentWidget(&pausedIcon);
+            stackLayout.setStackingMode(QStackedLayout::StackAll);
+        } else {
+            gridFrame.setGraphicsEffect(nullptr);
+
+            stackLayout.setCurrentWidget(&gridFrame);
+            stackLayout.setStackingMode(QStackedLayout::StackOne);
+        }
+
+        bool revealed = false;
         for (size_t row = 0; row < game.height(); ++row) {
             for (size_t col = 0; col < game.width(); ++col) {
                 const auto& t = board.at(row).at(col);
-                Tile* tile = grid.at(row).at(col);
+                Tile& tile = *grid.at(row).at(col);
 
                 // Default empty
-                tile->setIcon(QIcon());
-                tile->setText("");
+                tile.setIcon(QIcon());
+                tile.setText("");
 
                 if (timer.isPaused()) {
-                    tile->setDisabled(true);
-
-                    QGraphicsBlurEffect* blur = new QGraphicsBlurEffect();
-                    blur->setBlurHints(QGraphicsBlurEffect::PerformanceHint);
-                    blur->setBlurRadius(20);
-
-                    tile->setGraphicsEffect(blur);
+                    tile.setDisabled(true);
                 } else {
-                    tile->setDisabled(false);
-                    tile->setGraphicsEffect(nullptr);
+                    tile.setDisabled(false);
                 }
 
-                tile->setFlat(false);
-                tile->setProperty("class", "");
+                tile.setFlat(false);
+                tile.setProperty("type", "");
 
                 if (t.isMine()) {
-                    tile->setProperty("class", "mine");
+                    tile.setProperty("type", "mine");
+                } else {
+                    tile.setProperty("type", t.adjacentMineCount());
                 }
 
                 if (t.isFlagged()) {
                     // Flagged
-                    tile->setProperty("class", tile->property("class").toString() + " flagged");
+                    tile.setProperty("flagged", "true");
 
-                    if (gameState != NONE) {
+                    if (gameState != GameState::NONE) {
                         if (t.isMine()) {
-                            tile->setIcon(QIcon::fromTheme("flag-green"));
+                            tile.setIcon(QIcon::fromTheme("flag-green"));
                         } else {
-                            tile->setIcon(QIcon::fromTheme("flag-red"));
+                            tile.setIcon(QIcon::fromTheme("flag-red"));
                         }
                     } else {
-                        tile->setIcon(QIcon::fromTheme("flag"));
+                        tile.setIcon(QIcon::fromTheme("flag"));
                     }
-                    tile->setFlat(false);
+                    tile.setFlat(false);
+                } else {
+                    tile.setProperty("flagged", "false");
                 }
 
                 if (t.isRevealed()) {
-                    // Revealed class
-                    tile->setProperty("class", tile->property("class").toString() + " revealed");
+                    revealed = true;
 
-                    tile->setFlat(true);
+                    // Revealed class
+                    tile.setProperty("revealed", "true");
+
+                    tile.setFlat(true);
 
                     if (t.isMine()) {
-                        tile->setIcon(QIcon::fromTheme("edit-bomb"));
-                        tile->setFlat(false);
-                        tile->setCheckable(true);
+                        tile.setIcon(QIcon::fromTheme("edit-bomb"));
+                        tile.setFlat(false);
+                        tile.setCheckable(true);
                     } else if (t.adjacentMineCount() != 0) {
-                        tile->setText(QString::fromStdString(std::string(1, (char) board.at(row).at(col))));
+                        tile.setText(QString::fromStdString(std::string(1, (char) board.at(row).at(col))));
                     }
-                } else if (gameState != NONE) {
+                } else if (gameState != GameState::NONE) {
                     // When game is over
-                    tile->setProperty("class", tile->property("class").toString() + " over");
+                    tile.setProperty("gameOver", "true");
 
                     // Mine
                     if (t.isMine() && !t.isFlagged()) {
-                        tile->setIcon(QIcon::fromTheme("edit-bomb"));
-                        tile->setFlat(false);
-                        tile->setDisabled(true);
+                        tile.setIcon(QIcon::fromTheme("edit-bomb"));
+                        tile.setFlat(false);
+                        tile.setDisabled(true);
                     }
                 }
+
+                // Update styles
+                tile.style()->unpolish(&tile);
+                tile.style()->polish(&tile);
             }
         }
 
-        if (!timer.isActive()) {
+        if (revealed && !timer.isActive()) {
             timer.start();
-        } else if (gameState != NONE) {
+        } else if (gameState != GameState::NONE) {
             timer.stop();
         }
-        this->flagLabel->setText(QString::fromStdString(std::to_string(game.flagCount()) + '/' + std::to_string(game.mineCount())));
+        this->flagLabel.setText(QString::fromStdString(std::to_string(game.flagCount()) + '/' + std::to_string(game.mineCount())));
     }
 
 protected:
     minesweeper::game game;
-    std::unordered_map<size_t, std::unordered_map<size_t, Tile*>> grid;
+    QVBoxLayout& mainLayout = *new QVBoxLayout();
 
-    QVBoxLayout *mainLayout = new QVBoxLayout();
+    // Minesweeper grid
+    QWidget& centralWidget = *new QWidget();
 
-    QFrame* gridFrame = new QFrame();
-    QGridLayout* gridLayout = new QGridLayout();
-    QLabel* flagLabel = new QLabel();
-    RestartButton* restartButton = new RestartButton("", this);
-    SettingsButton* settingsButton = new SettingsButton(QIcon::fromTheme("configure"), "", this);
+    QFrame& boardFrame = *new QFrame();
+    QStackedLayout& stackLayout = *new QStackedLayout();
+    QPushButton& pausedIcon = *new QPushButton();
 
-    GameTimer timer = GameTimer(this);
-    QLabel* timeLabel = new QLabel();
+    QFrame& gridFrame = *new QFrame();
+    QGridLayout& gridLayout = *new QGridLayout();
 
-    GameState gameState = NONE;
+    QLabel& flagLabel = *new QLabel();
+
+    // Game controls
+    QHBoxLayout& topBoxLayout = *new QHBoxLayout();
+
+    RestartButton& restartButton = *new RestartButton("", this);
+    QShortcut& shortcut = *new QShortcut(QKeySequence(Qt::Key_Space), this);
+
+    SettingsButton& settingsButton = *new SettingsButton(QIcon::fromTheme("configure"), "", this);
+
+    // Game misc
+    GameTimer& timer = *new GameTimer(this);
+    QLabel& timeLabel = *new QLabel();
+
+    GameState gameState = GameState::NONE;
+    std::vector<std::vector<Tile*>> grid;
 };
 
 int main(int argc, char* argv[]) {
@@ -422,6 +464,14 @@ int main(int argc, char* argv[]) {
 
     // Borrow the icon from gnome-mines if possible
     window.setWindowIcon(QIcon::fromTheme("gnome-mines", QIcon::fromTheme("edit-bomb")));
+
+    // Load an application style
+    QFile styleFile(":/style.qss");
+    styleFile.open(QFile::ReadOnly);
+
+    // Apply the loaded stylesheet
+    QString style(styleFile.readAll());
+    app.setStyleSheet(style);
 
     window.show();
 

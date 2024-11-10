@@ -1,0 +1,46 @@
+QPushButton.pauseIcon {
+    background-color: transparent;
+    border: 0px transparent;
+    opacity: 1;
+}
+
+QPushButton.tile {
+    padding: 1%;
+    font-size: 3.5vw;
+}
+
+QPushButton[type="mine"][revealed="true"] {
+    background-color: red;
+}
+
+QPushButton[revealed="true"][type="1"] {
+    color: red;
+}
+
+QPushButton[revealed="true"][type="2"] {
+    color: green;
+}
+
+QPushButton[revealed="true"][type="3"] {
+    color: blue;
+}
+
+QPushButton[revealed="true"][type="4"] {
+    color: purple;
+}
+
+QPushButton[revealed="true"][type="5"] {
+    color: darkRed;
+}
+
+QPushButton[revealed="true"][type="6"] {
+    color: cyan;
+}
+
+QPushButton[revealed="true"][type="7"] {
+    color: white;
+}
+
+QPushButton[revealed="true"][type="8"] {
+    color: lightGrey;
+}
